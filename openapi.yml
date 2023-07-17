@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: DefraDB HTTP API
-  version: 0
+  version: '0'
 servers:
   - url: http://localhost:9181/api/v0/
 components:
@@ -65,6 +65,38 @@ components:
           type: string
         internal:
           type: boolean
+    IndexFieldDescription:
+      type: object
+      required:
+        - name
+        - direction
+      properties:
+        name:
+          type: string
+        direction:
+          type: string
+    IndexDescription:
+      type: object
+      required:
+        - name
+        - id
+        - fields
+      properties:
+        name:
+          type: string
+        id:
+          type: integer
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexFieldDescription'
+    SimpleResponse:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          type: string
     ListSchemasResponse:
       type: object
       required:
@@ -74,7 +106,127 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Collection'
+    LoadSchemaResponse:
+      type: object
+      required:
+        - response
+        - collections
+      properties:
+        response:
+          type: string
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+    GetBlockResponse:
+      type: object
+      required:
+        - block
+        - delta
+        - val
+      properties:
+        block:
+          type: string
+        delta:
+          type: string
+        val:
+          type: string
+    CreateIndexRequest:
+      type: object
+      required:
+        - collection
+        - fields
+        - name
+      properties:
+        collection:
+          type: string
+        fields:
+          type: string
+        name:
+          type: string
+    CreateIndexResponse:
+      type: object
+      required:
+        - index
+      properties:
+        index:
+          $ref: '#/components/schemas/IndexDescription'
+    DropIndexRequest:
+      type: object
+      required:
+        - collection
+        - name
+      properties:
+        collection:
+          type: string
+        name:
+          type: string
+    ListIndexResponse:
+      type: object
+      required:
+        - indexes
+      properties:
+        indexes:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexDescription'
+    PeerIdResponse:
+      type: object
+      required:
+        - peerID
+      properties:
+        peerID:
+          type: string
+  responses:
+    SimpleResponse:
+      description: Success
+      content:
+          'application/json':
+            schema: 
+              $ref: '#/components/schemas/SimpleResponse'
+    ErrorResponse:
+      description: Error
+      content:
+        'application/json':
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 paths:
+  /ping:
+    get:
+      operationId: Ping
+      summary: Ping to test connection to a node.
+      responses:
+        '200':
+          $ref: '#/components/responses/SimpleResponse'
+  /debug/dump:
+    get:
+      operationId: Dump
+      summary: Dump the contents of a database node-side.
+      responses:
+        '200':
+          $ref: '#/components/responses/SimpleResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /blocks/{cid}:
+    get:
+      operationId: GetBlock
+      summary: Get a block by its CID from the blockstore.
+      parameters:
+        - in: path
+          name: cid
+          schema:
+            type: string
+          required: true
+          description: CID of the block
+      responses:
+        '200':
+          description: Success
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/GetBlockResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
   /schema:
     get:
       operationId: ListSchemas
@@ -83,12 +235,118 @@ paths:
         '200':
           description: Success
           content:
-            application/json:
+            'application/json':
               schema: 
                 $ref: '#/components/schemas/ListSchemasResponse'
         default:
-          description: Error
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      operationId: LoadSchema
+      summary: Add a new schema type to DefraDB.
+      requestBody:
+        required: true
+        content:
+          'text/plain':
+            schema:
+              type: string
+            examples:
+              address:
+                summary: Address schema
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/address.graphql
+              user:
+                summary: User schema
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/user.graphql
+              booksone:
+                summary: Books and Authors with a one-to-one relationship
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/booksone.graphql
+              booksmany:
+                summary: Books and Authors with a many-to-one relationship
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/booksmany.graphql
+              bookauthpub:
+                summary: Books, Authors, and Publishers with one-to-one relationships
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/bookauthpub.graphql
+      responses:
+        '200':
+          description: Success
           content:
-            application/json:
+            'application/json':
+              schema: 
+                $ref: '#/components/schemas/LoadSchemaResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      operationId: PatchSchema
+      summary: Patch an existing schema type
+      requestBody:
+        required: true
+        content:
+          'text/plain':
+            schema:
+              type: string
+            examples:
+              adduser:
+                summary: Add address field to user schema
+                externalValue: https://raw.githubusercontent.com/sourcenetwork/defradb/develop/examples/schema/patch/user-add-address.patch.json
+      responses:
+        '200':
+          $ref: '#/components/responses/SimpleResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /index:
+    post:
+      operationId: CreateIndex
+      summary: Creates a secondary index on a collection's field(s).
+      requestBody:
+        required: true
+        content:
+          'application/json':
+            schema:
+              $ref: '#/components/schemas/CreateIndexRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            'application/json':
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/CreateIndexResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      operationId: DropIndex
+      summary: Drop a collection's secondary index.
+      requestBody:
+        required: true
+        content:
+          'application/json':
+            schema:
+              $ref: '#/components/schemas/DropIndexRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/SimpleResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    get:
+      operationId: ListIndex
+      summary: Shows the list indexes in the database or for a specific collection.
+      responses:
+        '200':
+          description: Success
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/ListIndexResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /peerid:
+    get:
+      operationId: PeerID
+      summary: Get the PeerID of the DefraDB node.
+      responses:
+        '200':
+          description: Success
+          content:
+            'application/json':
+              schema: 
+                $ref: '#/components/schemas/PeerIdResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
