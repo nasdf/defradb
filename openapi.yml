@@ -1,0 +1,94 @@
+openapi: 3.0.0
+info:
+  title: DefraDB HTTP API
+  version: 0
+servers:
+  - url: http://localhost:9181/api/v0/
+components:
+  schemas:
+    Extension:
+      type: object
+      required:
+        - status
+        - httpError
+      properties:
+        status:
+          type: integer
+        httpError:
+          type: string
+        stack:
+          type: string
+    ErrorItem:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+        extensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Extension'
+    ErrorResponse:
+      type: object
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorItem'
+    Collection:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/Field'
+    Field:
+      type: object
+      required:
+        - id
+        - name
+        - internal
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        internal:
+          type: boolean
+    ListSchemasResponse:
+      type: object
+      required:
+        - collections
+      properties:
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+paths:
+  /schema:
+    get:
+      operationId: ListSchemas
+      summary: List schema types with their respective fields.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/ListSchemasResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
