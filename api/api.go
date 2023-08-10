@@ -15,4 +15,5 @@ type API interface {
 	PeerAPI
 	BackupAPI
 	SchemaAPI
+	IndexAPI
 }

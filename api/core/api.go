@@ -13,15 +13,16 @@ package core
 import (
 	"github.com/sourcenetwork/defradb/api"
 	"github.com/sourcenetwork/defradb/client"
+	"github.com/sourcenetwork/defradb/net"
 )
 
 var _ api.API = (*Core)(nil)
 
 type Core struct {
-	db     client.DB
-	peerID string
+	db   client.DB
+	node *net.Node
 }
 
-func New(db client.DB) *Core {
-	return &Core{db, ""}
+func New(db client.DB, node *net.Node) *Core {
+	return &Core{db, node}
 }

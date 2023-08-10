@@ -21,7 +21,7 @@ import (
 
 func (c *Core) PeerInfo(ctx context.Context) (*api.PeerInfoResponse, error) {
 	return &api.PeerInfoResponse{
-		PeerID: c.peerID,
+		PeerID: c.node.PeerID().Pretty(),
 	}, nil
 }
 
