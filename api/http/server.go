@@ -49,17 +49,23 @@ func NewServer(db client.DB, node *net.Node) *Server {
 	schema.GET("/", server.ListSchemas)
 	schema.POST("/", server.LoadSchema)
 	schema.PATCH("/", server.PatchSchema)
-	schema.GET("/migration", server.GetMigration)
-	schema.POST("/migration", server.SetMigration)
+
+	migration := schema.Group("/migration")
+	migration.GET("/", server.GetMigration)
+	migration.POST("/", server.SetMigration)
 
 	peer := api.Group("/peer")
 	peer.GET("/info", server.PeerInfo)
-	peer.GET("/replicators", server.ListReplicators)
-	peer.POST("/replicators", server.SetReplicator)
-	peer.DELETE("/replicators", server.DeleteReplicator)
-	peer.GET("/collections", server.ListPeerCollections)
-	peer.POST("/collections/:id", server.AddPeerCollection)
-	peer.DELETE("/collections/:id", server.RemovePeerCollection)
+
+	replicators := peer.Group("/replicators")
+	replicators.GET("/replicators", server.ListReplicators)
+	replicators.POST("/replicators", server.SetReplicator)
+	replicators.DELETE("/replicators", server.DeleteReplicator)
+
+	collections := peer.Group("/collections")
+	collections.GET("/collections", server.ListPeerCollections)
+	collections.POST("/collections/:id", server.AddPeerCollection)
+	collections.DELETE("/collections/:id", server.RemovePeerCollection)
 
 	return server
 }

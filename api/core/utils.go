@@ -15,25 +15,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ipfs/boxo/datastore/dshelp"
+	"github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/sourcenetwork/defradb/client"
 	"github.com/sourcenetwork/defradb/errors"
 )
-
-func (c *Core) ExportBackup(ctx context.Context, config client.BackupConfig) error {
-	err := validateBackupConfig(ctx, &config, c.db)
-	if err != nil {
-		return err
-	}
-	return c.db.BasicExport(ctx, &config)
-}
-
-func (c *Core) ImportBackup(ctx context.Context, config client.BackupConfig) error {
-	err := validateBackupConfig(ctx, &config, c.db)
-	if err != nil {
-		return err
-	}
-	return c.db.BasicImport(ctx, config.Filepath)
-}
 
 func validateBackupConfig(ctx context.Context, cfg *client.BackupConfig, db client.DB) error {
 	if !isValidPath(cfg.Filepath) {
@@ -67,4 +54,18 @@ func isValidPath(filepath string) bool {
 	}
 
 	return false
+}
+
+func parseBlockCID(blockCID string) (cid.Cid, error) {
+	cID, err := cid.Decode(blockCID)
+	if err == nil {
+		return cID, nil
+	}
+	// If we can't try to parse DSKeyToCID
+	// return error if we still can't
+	hash, err := dshelp.DsKeyToMultihash(ds.NewKey(blockCID))
+	if err != nil {
+		return cid.Cid{}, err
+	}
+	return cid.NewCidV1(cid.Raw, hash), nil
 }

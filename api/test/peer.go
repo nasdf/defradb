@@ -8,15 +8,18 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-package api
+package test
 
 import (
 	"context"
-
-	"github.com/sourcenetwork/defradb/client"
 )
 
-type BackupAPI interface {
-	ExportBackup(ctx context.Context, config client.BackupConfig) error
-	ImportBackup(ctx context.Context, config client.BackupConfig) error
+func (s *TestSuite) TestPeerInfo() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	info, err := s.impl.PeerInfo(ctx)
+
+	s.Require().NoError(err)
+	s.Assert().Len(info.PeerID, 52)
 }

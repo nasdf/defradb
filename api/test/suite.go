@@ -8,21 +8,19 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-package core
+package test
 
 import (
+	"github.com/stretchr/testify/suite"
+
 	"github.com/sourcenetwork/defradb/api"
-	"github.com/sourcenetwork/defradb/client"
-	"github.com/sourcenetwork/defradb/net"
 )
 
-var _ api.API = (*Core)(nil)
-
-type Core struct {
-	db   client.DB
-	node *net.Node
+type TestSuite struct {
+	suite.Suite
+	impl api.API
 }
 
-func New(db client.DB, node *net.Node) *Core {
-	return &Core{db, node}
+func NewTestSuite(impl api.API) *TestSuite {
+	return &TestSuite{impl: impl}
 }
