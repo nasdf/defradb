@@ -12,6 +12,8 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -166,24 +168,23 @@ func (doc *Document) Get(field string) (any, error) {
 func (doc *Document) GetValue(field string) (Value, error) {
 	doc.mu.RLock()
 	defer doc.mu.RUnlock()
-	path, subPaths, hasSubPaths := parseFieldPath(field)
-	f, exists := doc.fields[path]
-	if !exists {
-		return nil, NewErrFieldNotExist(path)
-	}
 
+	parts := strings.SplitN(field, "/", 2)
+	f, exists := doc.fields[parts[0]]
+	if !exists {
+		return nil, NewErrFieldNotExist(parts[1])
+	}
 	val, err := doc.GetValueWithField(f)
 	if err != nil {
 		return nil, err
 	}
-
-	if !hasSubPaths {
+	if len(parts) < 2 {
 		return val, nil
-	} else if hasSubPaths && !val.IsDocument() {
-		return nil, ErrFieldNotObject
-	} else {
-		return val.Value().(*Document).GetValue(subPaths)
 	}
+	if !val.IsDocument() {
+		return nil, ErrFieldNotObject
+	}
+	return val.Value().(*Document).GetValue(parts[1])
 }
 
 // GetValueWithField gets the Value type from a given Field type
@@ -556,118 +557,125 @@ func (dStatus DocumentStatus) IsDeleted() bool {
 	return dStatus > 1
 }
 
-// loops through an object of the form map[string]any
-// and fills in the Document with each field it finds in the object.
-// Automatically handles sub objects and arrays.
-// Does not allow anonymous fields, error is thrown in this case
-// Eg. The JSON value [1,2,3,4] by itself is a valid JSON Object, but has no
-// field name.
-// func parseJSONObject(doc *Document, data map[string]any) error {
-// 	for k, v := range data {
-// 		switch v.(type) {
-
-// 		// int (any number)
-// 		case float64:
-// 			// case int64:
-
-// 			// Check if its actually a float or just an int
-// 			val := v.(float64)
-// 			if float64(int64(val)) == val { //int
-// 				doc.setCBOR(crdt.LWW_REGISTER, k, int64(val))
-// 			} else { //float
-// 				panic("todo")
-// 			}
-// 			break
-
-// 		// string
-// 		case string:
-// 			doc.setCBOR(crdt.LWW_REGISTER, k, v)
-// 			break
-
-// 		// array
-// 		case []any:
-// 			break
-
-// 		// sub object, recurse down.
-// 		// @TODO: Object Definitions
-// 		// You can use an object as a way to override defaults
-// 		// and types for JSON literals.
-// 		// Eg.
-// 		// Instead of { "Timestamp": 123 }
-// 		//			- which is parsed as an int
-// 		// Use { "Timestamp" : { "_Type": "uint64", "_Value": 123 } }
-// 		//			- Which is parsed as an uint64
-// 		case map[string]any:
-// 			subDoc := newEmptyDoc()
-// 			err := parseJSONObject(subDoc, v.(map[string]any))
-// 			if err != nil {
-// 				return err
-// 			}
-
-// 			doc.setObject(crdt.OBJECT, k, subDoc)
-// 			break
-
-// 		default:
-// 			return errors.Wrap("Unhandled type in raw JSON: %v => %T", k, v)
-
-// 		}
-// 	}
-// 	return nil
-// }
-
-// parses a document field path, can have sub elements if we have embedded objects.
-// Returns the first path, the remaining split paths, and a bool indicating if there are sub paths
-func parseFieldPath(path string) (string, string, bool) {
-	splitKeys := strings.SplitN(path, "/", 2)
-	return splitKeys[0], strings.Join(splitKeys[1:], ""), len(splitKeys) > 1
+// ArrayToFieldKind converts a generic array to the expected
+// FieldKind value type.
+func ArrayToFieldKind(value []any, kind FieldKind, nillable bool) (any, error) {
+	array := make([]any, len(value))
+	for i, v := range value {
+		var err error
+		if !nillable || v != nil {
+			array[i], err = ValueToFieldKind(v, kind)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return array, nil
 }
 
-// Example Usage: Create/Insert new object
-/*
-
-obj := `{
-	Hello: "World"
-}`
-objData := make(map[string]any)
-err := json.Unmarshal(&objData, obj)
-
-docA := document.NewFromJSON(objData)
-err := db.Save(document)
-		=> New batch transaction/store
-		=> Loop through doc values
-		=> 		instantiate MerkleCRDT objects
-		=> 		Set/Publish new CRDT values
-
-
-// One-to-one relationship example
-obj := `{
-	Hello: "world",
-	Author: {
-		Name: "Bob",
+// ValueToFieldKind converts a generic value to the expected
+// FieldKind value type.
+func ValueToFieldKind(value any, kind FieldKind) (any, error) {
+	switch kind {
+	case FieldKind_DocKey:
+		switch t := value.(type) {
+		case DocKey:
+			return t, nil
+		case string:
+			return NewDocKeyFromString(t)
+		}
+	case FieldKind_BOOL:
+		switch t := value.(type) {
+		case bool:
+			return t, nil
+		case string:
+			return strconv.ParseBool(t)
+		}
+	case FieldKind_BOOL_ARRAY, FieldKind_NILLABLE_BOOL_ARRAY:
+		switch t := value.(type) {
+		case []bool, nil:
+			return t, nil
+		case []any:
+			return ArrayToFieldKind(t, FieldKind_BOOL, kind == FieldKind_NILLABLE_BOOL_ARRAY)
+		}
+	case FieldKind_INT:
+		switch t := value.(type) {
+		case uint, uint16, uint32, uint64, int, int16, int32, int64:
+			return t, nil
+		case float32:
+			return int64(t), nil
+		case float64:
+			return int64(t), nil
+		case json.Number:
+			return t.Int64()
+		case string:
+			return strconv.ParseInt(t, 10, 64)
+		}
+	case FieldKind_INT_ARRAY, FieldKind_NILLABLE_INT_ARRAY:
+		switch t := value.(type) {
+		case []uint, []uint16, []uint32, []uint64, []int, []int16, []int32, []int64, nil:
+			return t, nil
+		case []any:
+			return ArrayToFieldKind(t, FieldKind_INT, kind == FieldKind_NILLABLE_INT_ARRAY)
+		}
+	case FieldKind_FLOAT:
+		switch t := value.(type) {
+		case float64:
+			return t, nil
+		case float32:
+			return float64(t), nil
+		case uint:
+			return float64(t), nil
+		case uint8:
+			return float64(t), nil
+		case uint16:
+			return float64(t), nil
+		case uint32:
+			return float64(t), nil
+		case uint64:
+			return float64(t), nil
+		case int:
+			return float64(t), nil
+		case int8:
+			return float64(t), nil
+		case int16:
+			return float64(t), nil
+		case int32:
+			return float64(t), nil
+		case int64:
+			return float64(t), nil
+		case json.Number:
+			return t.Float64()
+		case string:
+			return strconv.ParseFloat(t, 64)
+		}
+	case FieldKind_FLOAT_ARRAY, FieldKind_NILLABLE_FLOAT_ARRAY:
+		switch t := value.(type) {
+		case []float32, []float64, nil:
+			return t, nil
+		case []any:
+			return ArrayToFieldKind(t, FieldKind_FLOAT, kind == FieldKind_NILLABLE_FLOAT_ARRAY)
+		}
+	case FieldKind_DATETIME:
+		// TODO
+	case FieldKind_STRING:
+		switch t := value.(type) {
+		case string:
+			return t, nil
+		case []byte:
+			return string(t), nil
+		}
+	case FieldKind_STRING_ARRAY, FieldKind_NILLABLE_STRING_ARRAY:
+		switch t := value.(type) {
+		case []string, nil:
+			return t, nil
+		case []any:
+			return ArrayToFieldKind(t, FieldKind_STRING, kind == FieldKind_NILLABLE_STRING_ARRAY)
+		}
+	case FieldKind_FOREIGN_OBJECT:
+		// TODO
+	case FieldKind_FOREIGN_OBJECT_ARRAY:
+		// TODO
 	}
-}`
-
-docA := document.NewFromJSON(obj)
-
-// method 1
-docA.Patch(...)
-col.Save(docA)
-
-// method 2
-docA.Get("Author").Set("Name", "Eric")
-col.Save(docA)
-
-// method 3
-docB := docA.GetObject("Author")
-docB.Set("Name", "Eric")
-authorCollection.Save(docB)
-
-// method 4
-docA.Set("Author.Name")
-
-// method 5
-doc := col.GetWithRelations("key")
-// equivalent
-doc := col.Get(key, db.WithRelationsOpt)
-
-*/
+	return nil, fmt.Errorf("invalid value") // TODO add custom error
+}

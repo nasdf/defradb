@@ -11,138 +11,158 @@
 package client
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
-
-	ccid "github.com/sourcenetwork/defradb/core/cid"
+	"github.com/stretchr/testify/require"
 )
 
-var (
-	testJSONObj = []byte(`{
-		"Name": "John",
-		"Age": 26,
-		"Address": {
-			"Street": "Main",
-			"City": "Toronto"
-		}
-	}`)
-
-	pref = ccid.NewDefaultSHA256PrefixV1()
-)
-
-func TestNewFromJSON(t *testing.T) {
-	doc, err := NewDocFromJSON(testJSONObj)
-	if err != nil {
-		t.Error("Error creating new doc from JSON:", err)
-		return
-	}
-
-	buf, err := doc.Bytes()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// And then feed it some data
-	c, err := pref.Sum(buf)
-	if err != nil {
-		t.Error(err)
-	}
-	objKey := NewDocKeyV0(c)
-
-	if objKey.String() != doc.Key().String() {
-		t.Errorf("Incorrect doc key. Want %v, have %v", objKey.String(), doc.Key().String())
-		return
-	}
-
-	// check field/value
-	// fields
-	assert.Equal(t, doc.fields["Name"].Name(), "Name")
-	assert.Equal(t, doc.fields["Name"].Type(), LWW_REGISTER)
-	assert.Equal(t, doc.fields["Age"].Name(), "Age")
-	assert.Equal(t, doc.fields["Age"].Type(), LWW_REGISTER)
-	assert.Equal(t, doc.fields["Address"].Name(), "Address")
-	assert.Equal(t, doc.fields["Address"].Type(), OBJECT)
-
-	//values
-	assert.Equal(t, doc.values[doc.fields["Name"]].Value(), "John")
-	assert.Equal(t, doc.values[doc.fields["Name"]].IsDocument(), false)
-	assert.Equal(t, doc.values[doc.fields["Age"]].Value(), int64(26))
-	assert.Equal(t, doc.values[doc.fields["Age"]].IsDocument(), false)
-	assert.Equal(t, doc.values[doc.fields["Address"]].IsDocument(), true)
-
-	//subdoc fields
-	subDoc := doc.values[doc.fields["Address"]].Value().(*Document)
-	assert.Equal(t, subDoc.fields["Street"].Name(), "Street")
-	assert.Equal(t, subDoc.fields["Street"].Type(), LWW_REGISTER)
-	assert.Equal(t, subDoc.fields["City"].Name(), "City")
-	assert.Equal(t, subDoc.fields["City"].Type(), LWW_REGISTER)
-
-	//subdoc values
-	assert.Equal(t, subDoc.values[subDoc.fields["Street"]].Value(), "Main")
-	assert.Equal(t, subDoc.values[subDoc.fields["Street"]].IsDocument(), false)
-	assert.Equal(t, subDoc.values[subDoc.fields["City"]].Value(), "Toronto")
+type ValueToFieldKindTestCase struct {
+	name   string
+	kind   FieldKind
+	values []any
+	expect any
 }
 
-func TestSetWithJSON(t *testing.T) {
-	doc, err := NewDocFromJSON(testJSONObj)
-	if err != nil {
-		t.Error("Error creating new doc from JSON:", err)
-		return
+var valueToFieldKindTestCases = []ValueToFieldKindTestCase{
+	{
+		name:   "DocKey",
+		kind:   FieldKind_DocKey,
+		values: []any{"bae-2edb7fdd-cad7-5ad4-9c7d-6920245a96ed"},
+		expect: DocKey{
+			version: 1,
+			uuid:    uuid.UUID{0x2e, 0xdb, 0x7f, 0xdd, 0xca, 0xd7, 0x5a, 0xd4, 0x9c, 0x7d, 0x69, 0x20, 0x24, 0x5a, 0x96, 0xed},
+		},
+	},
+	{
+		name:   "Bool",
+		kind:   FieldKind_BOOL,
+		values: []any{"TRUE", "1"},
+		expect: true,
+	},
+	{
+		name:   "[Bool]",
+		kind:   FieldKind_BOOL_ARRAY,
+		values: []any{[]any{true, "0"}},
+		expect: []any{true, false},
+	},
+	{
+		name:   "[Bool] = nil",
+		kind:   FieldKind_BOOL_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "Int",
+		kind:   FieldKind_INT,
+		values: []any{float32(21), float64(21), json.Number("21"), "21"},
+		expect: int64(21),
+	},
+	{
+		name:   "[Int]",
+		kind:   FieldKind_INT_ARRAY,
+		values: []any{[]any{float32(1), float64(2), json.Number("3"), "4"}},
+		expect: []any{int64(1), int64(2), int64(3), int64(4)},
+	},
+	{
+		name:   "[Int] = nil",
+		kind:   FieldKind_INT_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "Float",
+		kind:   FieldKind_FLOAT,
+		values: []any{float32(3), uint(3), uint8(3), uint16(3), uint32(3), uint64(3), int(3), int8(3), int16(3), int32(3), int64(3), json.Number("3"), "3"},
+		expect: float64(3),
+	},
+	{
+		name:   "[Float]",
+		kind:   FieldKind_FLOAT_ARRAY,
+		values: []any{[]any{float32(1), uint(2), uint8(3), uint16(4), uint32(5), uint64(6), int(7), int8(8), int16(9), int32(10), int64(11), json.Number("12"), "13"}},
+		expect: []any{float64(1), float64(2), float64(3), float64(4), float64(5), float64(6), float64(7), float64(8), float64(9), float64(10), float64(11), float64(12), float64(13)},
+	},
+	{
+		name:   "[Float] = nil",
+		kind:   FieldKind_FLOAT_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "String",
+		kind:   FieldKind_STRING,
+		values: []any{[]byte("test")},
+		expect: "test",
+	},
+	{
+		name:   "[String]",
+		kind:   FieldKind_STRING_ARRAY,
+		values: []any{[]any{[]byte("1"), "2"}},
+		expect: []any{"1", "2"},
+	},
+	{
+		name:   "[String] = nil",
+		kind:   FieldKind_STRING_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "[Bool!]",
+		kind:   FieldKind_NILLABLE_BOOL_ARRAY,
+		values: []any{[]any{true, "0", nil}},
+		expect: []any{true, false, nil},
+	},
+	{
+		name:   "[Bool!] = nil",
+		kind:   FieldKind_NILLABLE_BOOL_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "[Int!]",
+		kind:   FieldKind_NILLABLE_INT_ARRAY,
+		values: []any{[]any{float32(1), float64(2), json.Number("3"), "4", nil}},
+		expect: []any{int64(1), int64(2), int64(3), int64(4), nil},
+	},
+	{
+		name:   "[Int!] = nil",
+		kind:   FieldKind_NILLABLE_INT_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "[Float!]",
+		kind:   FieldKind_NILLABLE_FLOAT_ARRAY,
+		values: []any{[]any{float32(1), uint(2), uint8(3), uint16(4), uint32(5), uint64(6), int(7), int8(8), int16(9), int32(10), int64(11), json.Number("12"), "13", nil}},
+		expect: []any{float64(1), float64(2), float64(3), float64(4), float64(5), float64(6), float64(7), float64(8), float64(9), float64(10), float64(11), float64(12), float64(13), nil},
+	},
+	{
+		name:   "[Float!] = nil",
+		kind:   FieldKind_NILLABLE_FLOAT_ARRAY,
+		expect: nil,
+	},
+	{
+		name:   "[String!]",
+		kind:   FieldKind_NILLABLE_STRING_ARRAY,
+		values: []any{[]any{[]byte("1"), "2", nil}},
+		expect: []any{"1", "2", nil},
+	},
+	{
+		name:   "[String!] = nil",
+		kind:   FieldKind_NILLABLE_STRING_ARRAY,
+		expect: nil,
+	},
+}
+
+func TestValueToFieldKind(t *testing.T) {
+	for _, c := range valueToFieldKindTestCases {
+		t.Run(c.name, func(t *testing.T) {
+			// expected value should return same type
+			actual, err := ValueToFieldKind(c.expect, c.kind)
+			require.NoError(t, err)
+			assert.EqualValues(t, c.expect, actual)
+
+			for _, v := range c.values {
+				actual, err := ValueToFieldKind(v, c.kind)
+				require.NoError(t, err)
+				assert.EqualValues(t, c.expect, actual)
+			}
+		})
 	}
-
-	buf, err := doc.Bytes()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// And then feed it some data
-	c, err := pref.Sum(buf)
-	if err != nil {
-		t.Error(err)
-	}
-	objKey := NewDocKeyV0(c)
-
-	if objKey.String() != doc.Key().String() {
-		t.Errorf("Incorrect doc key. Want %v, have %v", objKey.String(), doc.Key().String())
-		return
-	}
-
-	updatePatch := []byte(`{
-		"Name": "Alice",
-		"Age": 27,
-		"Address": null
-	}`)
-	err = doc.SetWithJSON(updatePatch)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// check field/value
-	// fields
-	assert.Equal(t, doc.fields["Name"].Name(), "Name")
-	assert.Equal(t, doc.fields["Name"].Type(), LWW_REGISTER)
-	assert.Equal(t, doc.fields["Age"].Name(), "Age")
-	assert.Equal(t, doc.fields["Age"].Type(), LWW_REGISTER)
-	assert.Equal(t, doc.fields["Address"].Name(), "Address")
-	assert.Equal(t, doc.fields["Address"].Type(), OBJECT)
-
-	//values
-	assert.Equal(t, doc.values[doc.fields["Name"]].Value(), "Alice")
-	assert.Equal(t, doc.values[doc.fields["Name"]].IsDocument(), false)
-	assert.Equal(t, doc.values[doc.fields["Age"]].Value(), int64(27))
-	assert.Equal(t, doc.values[doc.fields["Age"]].IsDocument(), false)
-	assert.Equal(t, doc.values[doc.fields["Address"]].IsDelete(), true)
-
-	//subdoc fields
-	// subDoc := doc.values[doc.fields["Address"]].Value().(*Document)
-	// assert.Equal(t, subDoc.fields["Street"].Name(), "Street")
-	// assert.Equal(t, subDoc.fields["Street"].Type(), client.LWW_REGISTER)
-	// assert.Equal(t, subDoc.fields["City"].Name(), "City")
-	// assert.Equal(t, subDoc.fields["City"].Type(), client.LWW_REGISTER)
-
-	// //subdoc values
-	// assert.Equal(t, subDoc.values[subDoc.fields["Street"]].Value(), "Main")
-	// assert.Equal(t, subDoc.values[subDoc.fields["Street"]].IsDocument(), false)
-	// assert.Equal(t, subDoc.values[subDoc.fields["City"]].Value(), "Toronto")
 }
