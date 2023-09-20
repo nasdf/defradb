@@ -15,9 +15,12 @@ import (
 	"encoding/binary"
 	"strings"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/gofrs/uuid/v5"
 	"github.com/ipfs/go-cid"
 	mbase "github.com/multiformats/go-multibase"
+
+	ccid "github.com/sourcenetwork/defradb/core/cid"
 )
 
 // DocKey versions.
@@ -40,6 +43,19 @@ type DocKey struct {
 	version uint16
 	uuid    uuid.UUID
 	cid     cid.Cid
+}
+
+// GenerateDocKey generates the document key for the given document.
+func GenerateDocKey(doc *Document) (DocKey, error) {
+	docBytes, err := cbor.Marshal(doc)
+	if err != nil {
+		return DocKey{}, err
+	}
+	docCid, err := ccid.NewSHA256CidV1(docBytes)
+	if err != nil {
+		return DocKey{}, err
+	}
+	return NewDocKeyV0(docCid), nil
 }
 
 // NewDocKeyV0 creates a new dockey identified by the root data CID,peerID, and namespaced by the versionNS.

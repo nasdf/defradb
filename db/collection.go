@@ -1044,7 +1044,7 @@ func (c *collection) save(
 			if err != nil {
 				return cid.Undef, err
 			}
-			if val.IsDelete() {
+			if val.IsDeleted() {
 				docProperties[k] = nil
 			} else {
 				docProperties[k] = val.Value()
@@ -1260,7 +1260,7 @@ func (c *collection) saveDocValue(
 		}
 		var bytes []byte
 		var err error
-		if val.IsDelete() { // empty byte array
+		if val.IsDeleted() { // empty byte array
 			bytes = []byte{}
 		} else {
 			bytes, err = wval.Bytes()

@@ -12,14 +12,11 @@ package client
 
 import (
 	"encoding/json"
-	"strings"
+	"fmt"
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/ipfs/go-cid"
-
 	"github.com/sourcenetwork/defradb/client/request"
-	ccid "github.com/sourcenetwork/defradb/core/cid"
 )
 
 // This is the main implementation starting point for accessing the internal Document API
@@ -48,488 +45,195 @@ import (
 // Values are literal or complex objects such as strings, integers, or sub documents (objects).
 //
 // Note: Documents represent the serialized state of the underlying MerkleCRDTs
-//
-// @todo: Extract Document into a Interface
-// @body: A document interface can be implemented by both a TypedDocument and a
-// UnTypedDocument, which use a schema and schemaless approach respectively.
 type Document struct {
+	// key is the unique identifier of the document
 	key DocKey
-	// SchemaVersionID holds the id of the schema version that this document is
-	// currently at.
-	//
-	// Migrating the document will update this value to the output version of the
-	// migration.
-	SchemaVersionID string
-	fields          map[string]Field
-	values          map[Field]Value
-	head            cid.Cid
-	mu              sync.RWMutex
-	// marks if document has unsaved changes
-	isDirty bool
+	// mutex is used to synchronize document access
+	mutex sync.RWMutex
+	// fields is a mapping of field names to field kinds
+	fields map[string]FieldDescription
+	// values is a mapping of field names to values
+	values map[string]Value
 }
 
-// NewDocWithKey creates a new Document with a specified key.
-func NewDocWithKey(key DocKey) *Document {
-	doc := newEmptyDoc()
-	doc.key = key
-	return doc
-}
+var (
+	_ json.Marshaler = (*Document)(nil)
+	_ cbor.Marshaler = (*Document)(nil)
+)
 
-func newEmptyDoc() *Document {
+// NewDocument creates a document which adheres to the given schema.
+func NewDocument(schema SchemaDescription) *Document {
+	fields := make(map[string]FieldDescription)
+	values := make(map[string]Value)
+
+	for _, field := range schema.Fields {
+		fields[field.Name] = field
+
+		switch field.Kind {
+		case FieldKind_FOREIGN_OBJECT, FieldKind_FOREIGN_OBJECT_ARRAY:
+			values[field.Name] = &ReferenceValue{ctype: field.Typ}
+		default:
+			values[field.Name] = &PrimitiveValue{ctype: field.Typ}
+		}
+	}
+
 	return &Document{
-		fields: make(map[string]Field),
-		values: make(map[Field]Value),
+		fields: fields,
+		values: values,
 	}
 }
 
-// NewDocFromMap creates a new Document from a data map.
-func NewDocFromMap(data map[string]any) (*Document, error) {
-	var err error
-	doc := &Document{
-		fields: make(map[string]Field),
-		values: make(map[Field]Value),
-	}
-
-	// check if document contains special _key field
-	k, hasKey := data["_key"]
-	if hasKey {
-		delete(data, "_key") // remove the key so it isn't parsed further
-		kstr, ok := k.(string)
-		if !ok {
-			return nil, NewErrUnexpectedType[string]("data[_key]", k)
-		}
-		if doc.key, err = NewDocKeyFromString(kstr); err != nil {
-			return nil, err
-		}
-	}
-
-	err = doc.setAndParseObjectType(data)
-	if err != nil {
-		return nil, err
-	}
-
-	// if no key was specified, then we assume it doesn't exist and we generate, and set it.
-	if !hasKey {
-		err = doc.generateAndSetDocKey()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return doc, nil
-}
-
-// NewFromJSON creates a new instance of a Document from a raw JSON object byte array.
-func NewDocFromJSON(obj []byte) (*Document, error) {
-	data := make(map[string]any)
-	err := json.Unmarshal(obj, &data)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewDocFromMap(data)
-}
-
-// Head returns the current head CID of the document.
-func (doc *Document) Head() cid.Cid {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	return doc.head
-}
-
-// SetHead sets the current head CID of the document.
-func (doc *Document) SetHead(head cid.Cid) {
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
-	doc.head = head
-}
-
-// Key returns the generated DocKey for this document.
+// Key returns the unique id for this document.
 func (doc *Document) Key() DocKey {
-	// Reading without a read-lock as we assume the DocKey is immutable
+	doc.mutex.RLock()
+	defer doc.mutex.RUnlock()
 	return doc.key
 }
 
-// Get returns the raw value for a given field.
-// Since Documents are objects with potentially sub objects a supplied field string can be of the
-// form "A/B/C", where field A is an object containing a object B which has a field C.
-// If no matching field exists then return an empty interface and an error.
-func (doc *Document) Get(field string) (any, error) {
-	val, err := doc.GetValue(field)
+// Set sets the value for the field with the given name and marks it as dirty.
+func (doc *Document) Set(name string, newValue any) error {
+	doc.mutex.Lock()
+	defer doc.mutex.Unlock()
+
+	desc, ok := doc.fields[name]
+	if !ok {
+		desc, ok = doc.fields[name+request.RelatedObjectID]
+	}
+	if !ok {
+		return fmt.Errorf("field not found: %s", name)
+	}
+	value, err := ValueToFieldKind(newValue, desc.Kind)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	// value can be a primitive or reference type
+	// make sure to chose the correct type
+	// so that the document is serialized correctly
+	switch desc.Kind {
+	case FieldKind_FOREIGN_OBJECT, FieldKind_FOREIGN_OBJECT_ARRAY:
+		doc.values[name] = &ReferenceValue{
+			value: value,
+			ctype: desc.Typ,
+			dirty: true,
+		}
+	default:
+		doc.values[name] = &PrimitiveValue{
+			value: value,
+			ctype: desc.Typ,
+			dirty: true,
+		}
+	}
+	// generate the document key when fields are changed
+	// this ensures that the document key is immutable
+	key, err := GenerateDocKey(doc)
+	if err != nil {
+		return err
+	}
+	doc.key = key
+	return nil
+}
+
+// SetWithJSON sets all the fields of a document using the given json.
+//
+// Fields set to nil will be marked as deleted.
+func (doc *Document) SetWithJSON(patch []byte) error {
+	var values map[string]any
+	if err := json.Unmarshal([]byte(patch), &values); err != nil {
+		return err
+	}
+	return doc.SetWithMap(values)
+}
+
+// SetWithMap sets the fields of a document using the given map.
+//
+// Fields set to nil will be marked as deleted.
+func (doc *Document) SetWithMap(values map[string]any) (err error) {
+	for name, value := range values {
+		if value == nil {
+			err = doc.Delete(name)
+		} else {
+			err = doc.Set(name, value)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Delete marks the field with the given name as deleted.
+func (doc *Document) Delete(name string) error {
+	doc.mutex.Lock()
+	defer doc.mutex.Unlock()
+
+	val, ok := doc.values[name]
+	if !ok {
+		return fmt.Errorf("field not found: %s", name)
+	}
+	val.Delete()
+	// generate the document key when fields are changed
+	// this ensures that the document key is immutable
+	key, err := GenerateDocKey(doc)
+	if err != nil {
+		return err
+	}
+	doc.key = key
+	return nil
+}
+
+// Value returns the value for the field with the given name.
+func (doc *Document) Value(name string) (any, error) {
+	doc.mutex.RLock()
+	defer doc.mutex.RUnlock()
+
+	val, ok := doc.values[name]
+	if !ok {
+		return nil, fmt.Errorf("field not found: %s", name)
 	}
 	return val.Value(), nil
 }
 
-// GetValue given a field as a string, return the Value type.
-func (doc *Document) GetValue(field string) (Value, error) {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	path, subPaths, hasSubPaths := parseFieldPath(field)
-	f, exists := doc.fields[path]
-	if !exists {
-		return nil, NewErrFieldNotExist(path)
-	}
-
-	val, err := doc.GetValueWithField(f)
-	if err != nil {
-		return nil, err
-	}
-
-	if !hasSubPaths {
-		return val, nil
-	} else if hasSubPaths && !val.IsDocument() {
-		return nil, ErrFieldNotObject
-	} else {
-		return val.Value().(*Document).GetValue(subPaths)
-	}
-}
-
-// GetValueWithField gets the Value type from a given Field type
-func (doc *Document) GetValueWithField(f Field) (Value, error) {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	v, exists := doc.values[f]
-	if !exists {
-		return nil, NewErrFieldNotExist(f.Name())
-	}
-	return v, nil
-}
-
-// SetWithJSON sets all the fields of a document using the provided
-// JSON Merge Patch object. Note: fields indicated as nil in the Merge
-// Patch are to be deleted
-// @todo: Handle sub documents for SetWithJSON
-func (doc *Document) SetWithJSON(patch []byte) error {
-	var patchObj map[string]any
-	err := json.Unmarshal(patch, &patchObj)
-	if err != nil {
-		return err
-	}
-
-	for k, v := range patchObj {
-		err = doc.Set(k, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Set the value of a field.
-func (doc *Document) Set(field string, value any) error {
-	return doc.setAndParseType(field, value)
-}
-
-// SetAs is the same as set, but you can manually set the CRDT type.
-func (doc *Document) SetAs(field string, value any, t CType) error {
-	return doc.setCBOR(t, field, value)
-}
-
-// Delete removes a field, and marks it to be deleted on the following db.Update() call.
-func (doc *Document) Delete(fields ...string) error {
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
-	for _, f := range fields {
-		field, exists := doc.fields[f]
-		if !exists {
-			return NewErrFieldNotExist(f)
-		}
-		doc.values[field].Delete()
-	}
-	return nil
-}
-
-func (doc *Document) set(t CType, field string, value Value) error {
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
-	var f Field
-	if v, exists := doc.fields[field]; exists {
-		f = v
-	} else {
-		f = doc.newField(t, field)
-		doc.fields[field] = f
-	}
-	doc.values[f] = value
-	doc.isDirty = true
-	return nil
-}
-
-func (doc *Document) setCBOR(t CType, field string, val any) error {
-	value := newCBORValue(t, val)
-	return doc.set(t, field, value)
-}
-
-func (doc *Document) setObject(t CType, field string, val *Document) error {
-	value := newValue(t, val)
-	return doc.set(t, field, &value)
-}
-
-// @todo: Update with document schemas
-func (doc *Document) setAndParseType(field string, value any) error {
-	if value == nil {
-		return doc.setCBOR(LWW_REGISTER, field, value)
-	}
-
-	switch val := value.(type) {
-	// int (any number)
-	case int:
-		err := doc.setCBOR(LWW_REGISTER, field, int64(val))
-		if err != nil {
-			return err
-		}
-	case uint64:
-		err := doc.setCBOR(LWW_REGISTER, field, int64(val))
-		if err != nil {
-			return err
-		}
-
-	case float64:
-		// case int64:
-
-		// Check if its actually a float or just an int
-		if float64(int64(val)) == val { //int
-			err := doc.setCBOR(LWW_REGISTER, field, int64(val))
-			if err != nil {
-				return err
-			}
-		} else { //float
-			err := doc.setCBOR(LWW_REGISTER, field, val)
-			if err != nil {
-				return err
-			}
-		}
-
-	// string, bool, and more
-	case string, bool, int64, []any, []bool, []*bool, []int64, []*int64, []float64, []*float64, []string, []*string:
-		err := doc.setCBOR(LWW_REGISTER, field, val)
-		if err != nil {
-			return err
-		}
-
-	// sub object, recurse down.
-	// @TODO: Object Definitions
-	// You can use an object as a way to override defaults
-	// and types for JSON literals.
-	// Eg.
-	// Instead of { "Timestamp": 123 }
-	//			- which is parsed as an int
-	// Use { "Timestamp" : { "_Type": "uint64", "_Value": 123 } }
-	//			- Which is parsed as an uint64
-	case map[string]any:
-		subDoc := newEmptyDoc()
-		err := subDoc.setAndParseObjectType(val)
-		if err != nil {
-			return err
-		}
-
-		err = doc.setObject(OBJECT, field, subDoc)
-		if err != nil {
-			return err
-		}
-
-	default:
-		return NewErrUnhandledType(field, val)
-	}
-	return nil
-}
-
-func (doc *Document) setAndParseObjectType(value map[string]any) error {
-	for k, v := range value {
-		err := doc.setAndParseType(k, v)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Fields gets the document fields as a map.
-func (doc *Document) Fields() map[string]Field {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	return doc.fields
-}
-
 // Values gets the document values as a map.
-func (doc *Document) Values() map[Field]Value {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	return doc.values
+func (doc *Document) Values() map[string]any {
+	doc.mutex.RLock()
+	defer doc.mutex.RUnlock()
+
+	var values map[string]any
+	for name, value := range doc.values {
+		values[name] = value.Value()
+	}
+	return values
 }
 
 // Bytes returns the document as a serialzed byte array using CBOR encoding.
 func (doc *Document) Bytes() ([]byte, error) {
-	docMap, err := doc.toMap()
-	if err != nil {
-		return nil, err
-	}
+	doc.mutex.RLock()
+	defer doc.mutex.RUnlock()
+	return cbor.Marshal(doc)
+}
 
+// Clean removes dirty and deleted marks from all values.
+func (doc *Document) Clean() {
+	doc.mutex.Lock()
+	defer doc.mutex.Unlock()
+
+	for _, value := range doc.values {
+		value.Clean()
+	}
+}
+
+func (doc *Document) MarshalCBOR() ([]byte, error) {
 	// Important: CanonicalEncOptions ensures consistent serialization of
 	// indeterministic datastructures, like Go Maps
 	em, err := cbor.CanonicalEncOptions().EncMode()
 	if err != nil {
 		return nil, err
 	}
-	return em.Marshal(docMap)
+	return em.Marshal(doc.values)
 }
 
-// String returns the document as a stringified JSON Object.
-// Note: This representation should not be used for any cryptographic operations,
-// such as signatures, or hashes as it does not guarantee canonical representation or ordering.
-func (doc *Document) String() (string, error) {
-	docMap, err := doc.toMap()
-	if err != nil {
-		return "", err
-	}
-
-	j, err := json.MarshalIndent(docMap, "", "\t")
-	if err != nil {
-		return "", err
-	}
-
-	return string(j), nil
-}
-
-// ToMap returns the document as a map[string]any
-// object.
-func (doc *Document) ToMap() (map[string]any, error) {
-	return doc.toMapWithKey()
-}
-
-// Clean cleans the document by removing all dirty fields.
-func (doc *Document) Clean() {
-	for _, v := range doc.Fields() {
-		val, _ := doc.GetValueWithField(v)
-		if val.IsDirty() {
-			if val.IsDelete() {
-				doc.SetAs(v.Name(), nil, v.Type()) //nolint:errcheck
-			}
-			val.Clean()
-		}
-	}
-}
-
-// converts the document into a map[string]any
-// including any sub documents
-func (doc *Document) toMap() (map[string]any, error) {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	docMap := make(map[string]any)
-	for k, v := range doc.fields {
-		value, exists := doc.values[v]
-		if !exists {
-			return nil, NewErrFieldNotExist(v.Name())
-		}
-
-		if value.IsDocument() {
-			subDoc := value.Value().(*Document)
-			subDocMap, err := subDoc.toMap()
-			if err != nil {
-				return nil, err
-			}
-			docMap[k] = subDocMap
-		}
-
-		docMap[k] = value.Value()
-	}
-
-	return docMap, nil
-}
-
-func (doc *Document) toMapWithKey() (map[string]any, error) {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-	docMap := make(map[string]any)
-	for k, v := range doc.fields {
-		value, exists := doc.values[v]
-		if !exists {
-			return nil, NewErrFieldNotExist(v.Name())
-		}
-
-		if value.IsDocument() {
-			subDoc := value.Value().(*Document)
-			subDocMap, err := subDoc.toMapWithKey()
-			if err != nil {
-				return nil, err
-			}
-			docMap[k] = subDocMap
-		}
-
-		docMap[k] = value.Value()
-	}
-	docMap["_key"] = doc.Key().String()
-
-	return docMap, nil
-}
-
-// GenerateDocKey generates docKey/docID corresponding to the document.
-func (doc *Document) GenerateDocKey() (DocKey, error) {
-	bytes, err := doc.Bytes()
-	if err != nil {
-		return DocKey{}, err
-	}
-
-	cid, err := ccid.NewSHA256CidV1(bytes)
-	if err != nil {
-		return DocKey{}, err
-	}
-
-	return NewDocKeyV0(cid), nil
-}
-
-// setDocKey sets the `doc.key` (should NOT be public).
-func (doc *Document) setDocKey(docID DocKey) {
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
-
-	doc.key = docID
-}
-
-// generateAndSetDocKey generates the docKey/docID and then (re)sets `doc.key`.
-func (doc *Document) generateAndSetDocKey() error {
-	docKey, err := doc.GenerateDocKey()
-	if err != nil {
-		return err
-	}
-
-	doc.setDocKey(docKey)
-	return nil
-}
-
-func (doc *Document) remapAliasFields(fieldDescriptions []FieldDescription) (bool, error) {
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
-
-	foundAlias := false
-	for docField, docFieldValue := range doc.fields {
-		for _, fieldDescription := range fieldDescriptions {
-			maybeAliasField := docField + request.RelatedObjectID
-			if fieldDescription.Name == maybeAliasField {
-				foundAlias = true
-				doc.fields[maybeAliasField] = docFieldValue
-				delete(doc.fields, docField)
-			}
-		}
-	}
-
-	return foundAlias, nil
-}
-
-// RemapAliasFieldsAndDockey remaps the alias fields and fixes (overwrites) the dockey.
-func (doc *Document) RemapAliasFieldsAndDockey(fieldDescriptions []FieldDescription) error {
-	foundAlias, err := doc.remapAliasFields(fieldDescriptions)
-	if err != nil {
-		return err
-	}
-
-	if !foundAlias {
-		return nil
-	}
-
-	// Update the dockey so dockey isn't based on an aliased name of a field.
-	return doc.generateAndSetDocKey()
+func (doc *Document) MarshalJSON() ([]byte, error) {
+	return json.Marshal(doc.values)
 }
 
 // DocumentStatus represent the state of the document in the DAG store.
@@ -557,119 +261,3 @@ func (dStatus DocumentStatus) UInt8() uint8 {
 func (dStatus DocumentStatus) IsDeleted() bool {
 	return dStatus > 1
 }
-
-// loops through an object of the form map[string]any
-// and fills in the Document with each field it finds in the object.
-// Automatically handles sub objects and arrays.
-// Does not allow anonymous fields, error is thrown in this case
-// Eg. The JSON value [1,2,3,4] by itself is a valid JSON Object, but has no
-// field name.
-// func parseJSONObject(doc *Document, data map[string]any) error {
-// 	for k, v := range data {
-// 		switch v.(type) {
-
-// 		// int (any number)
-// 		case float64:
-// 			// case int64:
-
-// 			// Check if its actually a float or just an int
-// 			val := v.(float64)
-// 			if float64(int64(val)) == val { //int
-// 				doc.setCBOR(crdt.LWW_REGISTER, k, int64(val))
-// 			} else { //float
-// 				panic("todo")
-// 			}
-// 			break
-
-// 		// string
-// 		case string:
-// 			doc.setCBOR(crdt.LWW_REGISTER, k, v)
-// 			break
-
-// 		// array
-// 		case []any:
-// 			break
-
-// 		// sub object, recurse down.
-// 		// @TODO: Object Definitions
-// 		// You can use an object as a way to override defaults
-// 		// and types for JSON literals.
-// 		// Eg.
-// 		// Instead of { "Timestamp": 123 }
-// 		//			- which is parsed as an int
-// 		// Use { "Timestamp" : { "_Type": "uint64", "_Value": 123 } }
-// 		//			- Which is parsed as an uint64
-// 		case map[string]any:
-// 			subDoc := newEmptyDoc()
-// 			err := parseJSONObject(subDoc, v.(map[string]any))
-// 			if err != nil {
-// 				return err
-// 			}
-
-// 			doc.setObject(crdt.OBJECT, k, subDoc)
-// 			break
-
-// 		default:
-// 			return errors.Wrap("Unhandled type in raw JSON: %v => %T", k, v)
-
-// 		}
-// 	}
-// 	return nil
-// }
-
-// parses a document field path, can have sub elements if we have embedded objects.
-// Returns the first path, the remaining split paths, and a bool indicating if there are sub paths
-func parseFieldPath(path string) (string, string, bool) {
-	splitKeys := strings.SplitN(path, "/", 2)
-	return splitKeys[0], strings.Join(splitKeys[1:], ""), len(splitKeys) > 1
-}
-
-// Example Usage: Create/Insert new object
-/*
-
-obj := `{
-	Hello: "World"
-}`
-objData := make(map[string]any)
-err := json.Unmarshal(&objData, obj)
-
-docA := document.NewFromJSON(objData)
-err := db.Save(document)
-		=> New batch transaction/store
-		=> Loop through doc values
-		=> 		instantiate MerkleCRDT objects
-		=> 		Set/Publish new CRDT values
-
-
-// One-to-one relationship example
-obj := `{
-	Hello: "world",
-	Author: {
-		Name: "Bob",
-	}
-}`
-
-docA := document.NewFromJSON(obj)
-
-// method 1
-docA.Patch(...)
-col.Save(docA)
-
-// method 2
-docA.Get("Author").Set("Name", "Eric")
-col.Save(docA)
-
-// method 3
-docB := docA.GetObject("Author")
-docB.Set("Name", "Eric")
-authorCollection.Save(docB)
-
-// method 4
-docA.Set("Author.Name")
-
-// method 5
-doc := col.GetWithRelations("key")
-// equivalent
-doc := col.Get(key, db.WithRelationsOpt)
-
-*/
