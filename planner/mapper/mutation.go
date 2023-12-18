@@ -29,7 +29,7 @@ type Mutation struct {
 
 	// The data to be used for the mutation.  For example, during a create this
 	// will be the json representation of the object to be inserted.
-	Data string
+	Data map[string]any
 }
 
 func (m *Mutation) CloneTo(index int) Requestable {

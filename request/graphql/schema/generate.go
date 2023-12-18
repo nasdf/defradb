@@ -13,6 +13,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	gql "github.com/sourcenetwork/graphql-go"
 
@@ -899,63 +900,55 @@ func (g *Generator) GenerateMutationInputForGQLType(obj *gql.Object) ([]*gql.Fie
 		return nil, NewErrTypeNotFound(typeName + "FilterArg")
 	}
 
-	return g.genTypeMutationFields(obj, filter)
+	return g.genTypeMutationFields(obj, filter), nil
 }
 
-func (g *Generator) genTypeMutationFields(
-	obj *gql.Object,
-	filterInput *gql.InputObject,
-) ([]*gql.Field, error) {
-	create, err := g.genTypeMutationCreateField(obj)
-	if err != nil {
-		return nil, err
-	}
-	update, err := g.genTypeMutationUpdateField(obj, filterInput)
-	if err != nil {
-		return nil, err
-	}
-	delete, err := g.genTypeMutationDeleteField(obj, filterInput)
-	if err != nil {
-		return nil, err
-	}
-	return []*gql.Field{create, update, delete}, nil
+func (g *Generator) genTypeMutationFields(obj *gql.Object, filterInput *gql.InputObject) []*gql.Field {
+	create := g.genTypeMutationCreateField(obj)
+	update := g.genTypeMutationUpdateField(obj, filterInput)
+	delete := g.genTypeMutationDeleteField(obj, filterInput)
+	return []*gql.Field{create, update, delete}
 }
 
-func (g *Generator) genTypeMutationCreateField(obj *gql.Object) (*gql.Field, error) {
-	field := &gql.Field{
+func (g *Generator) genTyeMutationArgs(obj *gql.Object) gql.FieldConfigArgument {
+	args := make(gql.FieldConfigArgument)
+	for key, val := range obj.Fields() {
+		if strings.HasPrefix(key, "_") {
+			continue
+		}
+		t, ok := val.Type.(gql.Type)
+		if !ok {
+			continue
+		}
+		args[key] = schemaTypes.NewArgConfig(t, t.Description())
+	}
+	return args
+}
+
+func (g *Generator) genTypeMutationCreateField(obj *gql.Object) *gql.Field {
+	return &gql.Field{
 		Name:        "create_" + obj.Name(),
 		Description: createDocumentDescription,
 		Type:        obj,
-		Args: gql.FieldConfigArgument{
-			"data": schemaTypes.NewArgConfig(gql.String, createDataArgDescription),
-		},
+		Args:        g.genTyeMutationArgs(obj),
 	}
-	return field, nil
 }
 
-func (g *Generator) genTypeMutationUpdateField(
-	obj *gql.Object,
-	filter *gql.InputObject,
-) (*gql.Field, error) {
-	field := &gql.Field{
+func (g *Generator) genTypeMutationUpdateField(obj *gql.Object, filter *gql.InputObject) *gql.Field {
+	args := g.genTyeMutationArgs(obj)
+	args["id"] = schemaTypes.NewArgConfig(gql.ID, updateIDArgDescription)
+	args["ids"] = schemaTypes.NewArgConfig(gql.NewList(gql.ID), updateIDsArgDescription)
+	args["filter"] = schemaTypes.NewArgConfig(filter, updateFilterArgDescription)
+	return &gql.Field{
 		Name:        "update_" + obj.Name(),
 		Description: updateDocumentsDescription,
 		Type:        gql.NewList(obj),
-		Args: gql.FieldConfigArgument{
-			"id":     schemaTypes.NewArgConfig(gql.ID, updateIDArgDescription),
-			"ids":    schemaTypes.NewArgConfig(gql.NewList(gql.ID), updateIDsArgDescription),
-			"filter": schemaTypes.NewArgConfig(filter, updateFilterArgDescription),
-			"data":   schemaTypes.NewArgConfig(gql.String, updateDataArgDescription),
-		},
+		Args:        args,
 	}
-	return field, nil
 }
 
-func (g *Generator) genTypeMutationDeleteField(
-	obj *gql.Object,
-	filter *gql.InputObject,
-) (*gql.Field, error) {
-	field := &gql.Field{
+func (g *Generator) genTypeMutationDeleteField(obj *gql.Object, filter *gql.InputObject) *gql.Field {
+	return &gql.Field{
 		Name:        "delete_" + obj.Name(),
 		Description: deleteDocumentsDescription,
 		Type:        gql.NewList(obj),
@@ -965,7 +958,6 @@ func (g *Generator) genTypeMutationDeleteField(
 			"filter": schemaTypes.NewArgConfig(filter, deleteFilterArgDescription),
 		},
 	}
-	return field, nil
 }
 
 func (g *Generator) genTypeFieldsEnum(obj *gql.Object) *gql.Enum {

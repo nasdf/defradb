@@ -66,6 +66,7 @@ func parseMutation(schema gql.Schema, parent *gql.Object, field *ast.Field) (*re
 			Name:  field.Name.Value,
 			Alias: getFieldAlias(field),
 		},
+		Data: make(map[string]any),
 	}
 
 	fieldDef := gql.GetFieldDef(schema, parent, mut.Name)
@@ -99,13 +100,7 @@ func parseMutation(schema gql.Schema, parent *gql.Object, field *ast.Field) (*re
 	for _, argument := range field.Arguments {
 		prop := argument.Name.Value
 		// parse each individual arg type seperately
-		if prop == request.Data { // parse data
-			raw := argument.Value.(*ast.StringValue)
-			if raw.Value == "" {
-				return nil, ErrEmptyDataPayload
-			}
-			mut.Data = raw.Value
-		} else if prop == request.FilterClause { // parse filter
+		if prop == request.FilterClause { // parse filter
 			obj := argument.Value.(*ast.ObjectValue)
 			filterType, ok := getArgumentType(fieldDef, request.FilterClause)
 			if !ok {
@@ -131,6 +126,9 @@ func parseMutation(schema gql.Schema, parent *gql.Object, field *ast.Field) (*re
 				ids[i] = id.Value
 			}
 			mut.IDs = immutable.Some(ids)
+		} else {
+			raw := argument.Value.GetValue()
+			mut.Data[argument.Name.Value] = raw
 		}
 	}
 

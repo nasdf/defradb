@@ -30,7 +30,7 @@ type updateNode struct {
 	filter *mapper.Filter
 	ids    []string
 
-	patch string
+	docMap map[string]any
 
 	isUpdating bool
 
@@ -66,7 +66,11 @@ func (n *updateNode) Next() (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			_, err = n.collection.UpdateWithKey(n.p.ctx, key, n.patch)
+			patch, err := json.Marshal(n.docMap)
+			if err != nil {
+				return false, err
+			}
+			_, err = n.collection.UpdateWithKey(n.p.ctx, key, string(patch))
 			if err != nil {
 				return false, err
 			}
@@ -125,12 +129,7 @@ func (n *updateNode) simpleExplain() (map[string]any, error) {
 	}
 
 	// Add the attribute that represents the patch to update with.
-	data := map[string]any{}
-	err := json.Unmarshal([]byte(n.patch), &data)
-	if err != nil {
-		return nil, err
-	}
-	simpleExplainMap[dataLabel] = data
+	simpleExplainMap[dataLabel] = n.docMap
 
 	return simpleExplainMap, nil
 }
@@ -159,7 +158,7 @@ func (p *Planner) UpdateDocs(parsed *mapper.Mutation) (planNode, error) {
 		filter:     parsed.Filter,
 		ids:        parsed.DocKeys.Value(),
 		isUpdating: true,
-		patch:      parsed.Data,
+		docMap:     parsed.Data,
 		docMapper:  docMapper{parsed.DocumentMapping},
 	}
 

@@ -11,8 +11,6 @@
 package planner
 
 import (
-	"encoding/json"
-
 	"github.com/sourcenetwork/defradb/client"
 	"github.com/sourcenetwork/defradb/client/request"
 	"github.com/sourcenetwork/defradb/core"
@@ -37,9 +35,9 @@ type createNode struct {
 	// collection name, meta-data, etc.
 	collection client.Collection
 
-	// newDoc is the JSON string of the new document, unparsed
-	newDocStr string
-	doc       *client.Document
+	// docMap is a map of the document fields
+	docMap map[string]any
+	doc    *client.Document
 
 	err error
 
@@ -59,7 +57,7 @@ func (n *createNode) Kind() string { return "createNode" }
 func (n *createNode) Init() error { return nil }
 
 func (n *createNode) Start() error {
-	doc, err := client.NewDocFromJSON([]byte(n.newDocStr))
+	doc, err := client.NewDocFromMap(n.docMap)
 	if err != nil {
 		n.err = err
 		return err
@@ -136,14 +134,8 @@ func (n *createNode) Close() error {
 func (n *createNode) Source() planNode { return n.results }
 
 func (n *createNode) simpleExplain() (map[string]any, error) {
-	data := map[string]any{}
-	err := json.Unmarshal([]byte(n.newDocStr), &data)
-	if err != nil {
-		return nil, err
-	}
-
 	return map[string]any{
-		dataLabel: data,
+		dataLabel: n.docMap,
 	}, nil
 }
 
@@ -173,7 +165,7 @@ func (p *Planner) CreateDoc(parsed *mapper.Mutation) (planNode, error) {
 	// create a mutation createNode.
 	create := &createNode{
 		p:         p,
-		newDocStr: parsed.Data,
+		docMap:    parsed.Data,
 		results:   results,
 		docMapper: docMapper{parsed.DocumentMapping},
 	}
