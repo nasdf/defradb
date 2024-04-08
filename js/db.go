@@ -246,7 +246,7 @@ func (f dbFuncs) execRequestFunc(ctx context.Context) js.Func {
 		if args[0].Type() != js.TypeString {
 			return js.Undefined(), errInvalidArgs
 		}
-		res := f.db.ExecRequest(ctx, args[0].String())
+		res := f.db.ExecRequest(ctx, immutable.None[string](), args[0].String())
 		if res.Pub == nil {
 			return encodeJS(res.GQL)
 		}

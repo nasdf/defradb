@@ -18,6 +18,7 @@ import (
 	"syscall/js"
 
 	"github.com/sourcenetwork/defradb/client"
+	"github.com/sourcenetwork/immutable"
 )
 
 type collectionFuncs struct {
@@ -91,7 +92,7 @@ func (f collectionFuncs) createFunc(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.Create(ctx, doc)
+		err = f.col.Create(ctx, immutable.None[string](), doc)
 		return js.Undefined(), err
 	})
 }
@@ -109,7 +110,7 @@ func (f collectionFuncs) createManyFunc(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.CreateMany(ctx, docs)
+		err = f.col.CreateMany(ctx, immutable.None[string](), docs)
 		return js.Undefined(), err
 	})
 }
@@ -130,7 +131,7 @@ func (f collectionFuncs) updateFunc(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		doc, err := f.col.Get(ctx, docID, false)
+		doc, err := f.col.Get(ctx, immutable.None[string](), docID, false)
 		if err != nil {
 			return js.Undefined(), err
 		}
@@ -138,7 +139,7 @@ func (f collectionFuncs) updateFunc(ctx context.Context) js.Func {
 		if err := doc.SetWithJSON([]byte(docData)); err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.Update(ctx, doc)
+		err = f.col.Update(ctx, immutable.None[string](), doc)
 		return js.Undefined(), err
 	})
 }
@@ -159,11 +160,11 @@ func (f collectionFuncs) save(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		_, err = f.col.Get(ctx, docID, true)
+		_, err = f.col.Get(ctx, immutable.None[string](), docID, true)
 		if err == nil {
 			return this.Call("update", args[0]), nil
 		}
-		if errors.Is(err, client.ErrDocumentNotFound) {
+		if errors.Is(err, client.ErrDocumentNotFoundOrNotAuthorized) {
 			return this.Call("create", args[0]), nil
 		}
 		return js.Undefined(), err
@@ -182,7 +183,7 @@ func (f collectionFuncs) delete(ctx context.Context) js.Func {
 		if err != nil {
 			return js.ValueOf(false), err
 		}
-		exists, err := f.col.Delete(ctx, docID)
+		exists, err := f.col.Delete(ctx, immutable.None[string](), docID)
 		return js.ValueOf(exists), err
 	})
 }
@@ -199,7 +200,7 @@ func (f collectionFuncs) exists(ctx context.Context) js.Func {
 		if err != nil {
 			return js.ValueOf(false), err
 		}
-		exists, err := f.col.Exists(ctx, docID)
+		exists, err := f.col.Exists(ctx, immutable.None[string](), docID)
 		return js.ValueOf(exists), err
 	})
 }
@@ -219,7 +220,7 @@ func (f collectionFuncs) get(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		doc, err := f.col.Get(ctx, docID, args[1].Bool())
+		doc, err := f.col.Get(ctx, immutable.None[string](), docID, args[1].Bool())
 		if err != nil {
 			return js.Undefined(), err
 		}
@@ -233,7 +234,7 @@ func (f collectionFuncs) get(ctx context.Context) js.Func {
 
 func (f collectionFuncs) getAllDocIDs(ctx context.Context) js.Func {
 	return async(func(this js.Value, args []js.Value) (js.Value, error) {
-		resCh, err := f.col.GetAllDocIDs(ctx)
+		resCh, err := f.col.GetAllDocIDs(ctx, immutable.None[string]())
 		if err != nil {
 			return js.Undefined(), err
 		}
