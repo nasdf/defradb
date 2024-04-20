@@ -17,7 +17,7 @@ import (
 	"github.com/lens-vm/lens/host-go/config"
 	"github.com/lens-vm/lens/host-go/config/model"
 	"github.com/lens-vm/lens/host-go/engine/module"
-	"github.com/lens-vm/lens/host-go/runtimes/wasmtime"
+	"github.com/lens-vm/lens/host-go/runtimes"
 	"github.com/sourcenetwork/immutable"
 	"github.com/sourcenetwork/immutable/enumerable"
 
@@ -91,7 +91,7 @@ func NewRegistry(
 ) client.LensRegistry {
 	registry := &lensRegistry{
 		poolSize:                    DefaultPoolSize,
-		runtime:                     wasmtime.New(),
+		runtime:                     runtimes.Default(),
 		modulesByPath:               map[string]module.Module{},
 		lensPoolsByCollectionID:     map[uint32]*lensPool{},
 		reversedPoolsByCollectionID: map[uint32]*lensPool{},
