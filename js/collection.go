@@ -18,7 +18,7 @@ import (
 	"syscall/js"
 
 	"github.com/sourcenetwork/defradb/client"
-	"github.com/sourcenetwork/immutable"
+	"github.com/sourcenetwork/goji"
 )
 
 type collectionFuncs struct {
@@ -69,13 +69,13 @@ func (f collectionFuncs) schemaRootFunc() js.Func {
 
 func (f collectionFuncs) definitionFunc() js.Func {
 	return async(func(this js.Value, args []js.Value) (js.Value, error) {
-		return encodeJS(f.col.Definition())
+		return goji.MarshalJS(f.col.Definition())
 	})
 }
 
 func (f collectionFuncs) schemaFunc() js.Func {
 	return async(func(this js.Value, args []js.Value) (js.Value, error) {
-		return encodeJS(f.col.Schema())
+		return goji.MarshalJS(f.col.Schema())
 	})
 }
 
@@ -87,12 +87,12 @@ func (f collectionFuncs) createFunc(ctx context.Context) js.Func {
 		if args[0].Type() != js.TypeObject {
 			return js.Undefined(), errInvalidArgs
 		}
-		docData := jsonStringify(args[0])
-		doc, err := client.NewDocFromJSON([]byte(docData), f.col.Schema())
+		docData := goji.JSON.Stringify(args[0])
+		doc, err := client.NewDocFromJSON([]byte(docData), f.col.Definition())
 		if err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.Create(ctx, immutable.None[string](), doc)
+		err = f.col.Create(ctx, doc)
 		return js.Undefined(), err
 	})
 }
@@ -105,12 +105,12 @@ func (f collectionFuncs) createManyFunc(ctx context.Context) js.Func {
 		if args[0].Type() != js.TypeObject {
 			return js.Undefined(), errInvalidArgs
 		}
-		docsData := jsonStringify(args[0])
-		docs, err := client.NewDocsFromJSON([]byte(docsData), f.col.Schema())
+		docsData := goji.JSON.Stringify(args[0])
+		docs, err := client.NewDocsFromJSON([]byte(docsData), f.col.Definition())
 		if err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.CreateMany(ctx, immutable.None[string](), docs)
+		err = f.col.CreateMany(ctx, docs)
 		return js.Undefined(), err
 	})
 }
@@ -131,15 +131,15 @@ func (f collectionFuncs) updateFunc(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		doc, err := f.col.Get(ctx, immutable.None[string](), docID, false)
+		doc, err := f.col.Get(ctx, docID, false)
 		if err != nil {
 			return js.Undefined(), err
 		}
-		docData := jsonStringify(args[0])
+		docData := goji.JSON.Stringify(args[0])
 		if err := doc.SetWithJSON([]byte(docData)); err != nil {
 			return js.Undefined(), err
 		}
-		err = f.col.Update(ctx, immutable.None[string](), doc)
+		err = f.col.Update(ctx, doc)
 		return js.Undefined(), err
 	})
 }
@@ -160,7 +160,7 @@ func (f collectionFuncs) save(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		_, err = f.col.Get(ctx, immutable.None[string](), docID, true)
+		_, err = f.col.Get(ctx, docID, true)
 		if err == nil {
 			return this.Call("update", args[0]), nil
 		}
@@ -183,7 +183,7 @@ func (f collectionFuncs) delete(ctx context.Context) js.Func {
 		if err != nil {
 			return js.ValueOf(false), err
 		}
-		exists, err := f.col.Delete(ctx, immutable.None[string](), docID)
+		exists, err := f.col.Delete(ctx, docID)
 		return js.ValueOf(exists), err
 	})
 }
@@ -200,7 +200,7 @@ func (f collectionFuncs) exists(ctx context.Context) js.Func {
 		if err != nil {
 			return js.ValueOf(false), err
 		}
-		exists, err := f.col.Exists(ctx, immutable.None[string](), docID)
+		exists, err := f.col.Exists(ctx, docID)
 		return js.ValueOf(exists), err
 	})
 }
@@ -220,7 +220,7 @@ func (f collectionFuncs) get(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		doc, err := f.col.Get(ctx, immutable.None[string](), docID, args[1].Bool())
+		doc, err := f.col.Get(ctx, docID, args[1].Bool())
 		if err != nil {
 			return js.Undefined(), err
 		}
@@ -228,13 +228,13 @@ func (f collectionFuncs) get(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(docMap)
+		return goji.MarshalJS(docMap)
 	})
 }
 
 func (f collectionFuncs) getAllDocIDs(ctx context.Context) js.Func {
 	return async(func(this js.Value, args []js.Value) (js.Value, error) {
-		resCh, err := f.col.GetAllDocIDs(ctx, immutable.None[string]())
+		resCh, err := f.col.GetAllDocIDs(ctx)
 		if err != nil {
 			return js.Undefined(), err
 		}
@@ -264,14 +264,14 @@ func (f collectionFuncs) createIndex(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var desc client.IndexDescription
-		if err := decodeJS(&desc, args[0]); err != nil {
+		if err := goji.UnmarshalJS(args[0], &desc); err != nil {
 			return js.Undefined(), err
 		}
 		out, err := f.col.CreateIndex(ctx, desc)
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(out)
+		return goji.MarshalJS(out)
 	})
 }
 
@@ -294,6 +294,6 @@ func (f collectionFuncs) getIndexes(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(indexes)
+		return goji.MarshalJS(indexes)
 	})
 }

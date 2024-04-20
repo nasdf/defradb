@@ -261,6 +261,7 @@ require (
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
+	github.com/sourcenetwork/goji v0.0.1 // indirect
 	github.com/sourcenetwork/raccoondb v0.2.0 // indirect
 	github.com/sourcenetwork/zanzi v0.3.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect

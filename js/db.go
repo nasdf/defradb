@@ -17,6 +17,7 @@ import (
 	"syscall/js"
 
 	"github.com/lens-vm/lens/host-go/config/model"
+	"github.com/sourcenetwork/goji"
 	"github.com/sourcenetwork/immutable"
 
 	"github.com/sourcenetwork/defradb/client"
@@ -56,7 +57,7 @@ func (f dbFuncs) addSchemaFunc(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(cols)
+		return goji.MarshalJS(cols)
 	})
 }
 
@@ -75,7 +76,7 @@ func (f dbFuncs) patchSchemaFunc(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var lens immutable.Option[model.Lens]
-		if err := decodeJS(&lens, args[1]); err != nil {
+		if err := goji.UnmarshalJS(args[1], &lens); err != nil {
 			return js.Undefined(), err
 		}
 		err := f.db.PatchSchema(ctx, args[0].String(), lens, args[2].Bool())
@@ -124,14 +125,14 @@ func (f dbFuncs) addViewFunc(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var lens immutable.Option[model.Lens]
-		if err := decodeJS(&lens, args[2]); err != nil {
+		if err := goji.UnmarshalJS(args[2], &lens); err != nil {
 			return js.Undefined(), err
 		}
 		cols, err := f.db.AddView(ctx, args[0].String(), args[1].String(), lens)
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(cols)
+		return goji.MarshalJS(cols)
 	})
 }
 
@@ -144,7 +145,7 @@ func (f dbFuncs) setMigrationFunc(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var cfg client.LensConfig
-		if err := decodeJS(&cfg, args[0]); err != nil {
+		if err := goji.UnmarshalJS(args[0], &cfg); err != nil {
 			return js.Undefined(), err
 		}
 		err := f.db.SetMigration(ctx, cfg)
@@ -177,7 +178,7 @@ func (f dbFuncs) getCollections(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var opts client.CollectionFetchOptions
-		if err := decodeJS(&opts, args[0]); err != nil {
+		if err := goji.UnmarshalJS(args[0], &opts); err != nil {
 			return js.Undefined(), err
 		}
 		cols, err := f.db.GetCollections(ctx, opts)
@@ -204,7 +205,7 @@ func (f dbFuncs) getSchemaByVersionID(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(schema)
+		return goji.MarshalJS(schema)
 	})
 }
 
@@ -217,14 +218,14 @@ func (f dbFuncs) getSchemas(ctx context.Context) js.Func {
 			return js.Undefined(), errInvalidArgs
 		}
 		var opts client.SchemaFetchOptions
-		if err := decodeJS(&opts, args[0]); err != nil {
+		if err := goji.UnmarshalJS(args[0], &opts); err != nil {
 			return js.Undefined(), err
 		}
 		schemas, err := f.db.GetSchemas(ctx, opts)
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(schemas)
+		return goji.MarshalJS(schemas)
 	})
 }
 
@@ -234,7 +235,7 @@ func (f dbFuncs) getAllIndexes(ctx context.Context) js.Func {
 		if err != nil {
 			return js.Undefined(), err
 		}
-		return encodeJS(indexes)
+		return goji.MarshalJS(indexes)
 	})
 }
 
@@ -246,13 +247,13 @@ func (f dbFuncs) execRequestFunc(ctx context.Context) js.Func {
 		if args[0].Type() != js.TypeString {
 			return js.Undefined(), errInvalidArgs
 		}
-		res := f.db.ExecRequest(ctx, immutable.None[string](), args[0].String())
+		res := f.db.ExecRequest(ctx, args[0].String())
 		if res.Pub == nil {
-			return encodeJS(res.GQL)
+			return goji.MarshalJS(res.GQL)
 		}
 		return asyncIterator(func(this js.Value, args []js.Value) (js.Value, error) {
 			out, ok := <-res.Pub.Stream()
-			val, err := encodeJS(out)
+			val, err := goji.MarshalJS(out)
 			if err != nil {
 				return js.Undefined(), err
 			}

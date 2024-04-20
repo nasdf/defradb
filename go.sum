@@ -1055,6 +1055,8 @@ github.com/sourcenetwork/corelog v0.0.6 h1:3q3Kh1G0C4iHimkPrOpAZOKIKESIv4zZ51vKu
 github.com/sourcenetwork/corelog v0.0.6/go.mod h1:mXsBA4ujUt0lAkDFoHoXuaIQjhdeXi+RfDNV7ZTiy5E=
 github.com/sourcenetwork/go-libp2p-pubsub-rpc v0.0.13 h1:d/PeGZutd5NcDr6ltAv8ubN5PxsHMp1YUnhHY/QCWB4=
 github.com/sourcenetwork/go-libp2p-pubsub-rpc v0.0.13/go.mod h1:jUoQv592uUX1u7QBjAY4C+l24X9ArhPfifOqXpDHz4U=
+github.com/sourcenetwork/goji v0.0.1 h1:Fb9l0tkKONc4VPoomtx0l13+MGTu+H2tJbBgQC8b5tQ=
+github.com/sourcenetwork/goji v0.0.1/go.mod h1:A/dsoaCbLQ1a5PQfUVCA1zYMHnNAprVhZEmQHIlCfjE=
 github.com/sourcenetwork/graphql-go v0.7.10-0.20231113214537-a9560c1898dd h1:lmpW39/8wPJ0khWRhOcj7Bj0HYKbSmQ8rXMJw1cMB8U=
 github.com/sourcenetwork/graphql-go v0.7.10-0.20231113214537-a9560c1898dd/go.mod h1:rkahXkgRH/3vZErN1Bx+qt1+w+CV5fgaJyKKWgISe4U=
 github.com/sourcenetwork/immutable v0.3.0 h1:gHPtGvLrTBTK5YpDAhMU+u+S8v1F6iYmc3nbZLryMdc=
