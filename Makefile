@@ -66,6 +66,7 @@ BUILD_FLAGS+=-tags $(BUILD_TAGS)
 endif
 
 TEST_FLAGS=-race -shuffle=on -timeout 5m
+JS_TEST_FLAGS=-shuffle=on -timeout 5m
 
 COVERAGE_DIRECTORY=$(PWD)/coverage
 COVERAGE_FILE=coverage.txt
@@ -143,6 +144,7 @@ deps\:lint:
 .PHONY: deps\:test
 deps\:test:
 	go install gotest.tools/gotestsum@latest
+	go install github.com/agnivade/wasmbrowsertest@latest
 	rustup target add wasm32-unknown-unknown
 	@$(MAKE) -C ./tests/lenses build
 
@@ -259,6 +261,10 @@ test\:col-named-mutations:
 .PHONY: test\:go
 test\:go:
 	go test $(DEFAULT_TEST_DIRECTORIES) $(TEST_FLAGS)
+
+.PHONY: test\:http
+test\:js:
+	GOOS=js GOARCH=wasm go test ./tests/integration/... $(JS_TEST_FLAGS)
 
 .PHONY: test\:http
 test\:http:
