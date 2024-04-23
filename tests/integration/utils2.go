@@ -31,7 +31,6 @@ import (
 	acpIdentity "github.com/sourcenetwork/defradb/acp/identity"
 	"github.com/sourcenetwork/defradb/client"
 	"github.com/sourcenetwork/defradb/datastore"
-	badgerds "github.com/sourcenetwork/defradb/datastore/badger/v4"
 	"github.com/sourcenetwork/defradb/db"
 	"github.com/sourcenetwork/defradb/errors"
 	"github.com/sourcenetwork/defradb/net"
@@ -1564,7 +1563,7 @@ func withRetry(
 ) error {
 	for i := 0; i < nodes[nodeID].MaxTxnRetries(); i++ {
 		err := action()
-		if err != nil && errors.Is(err, badgerds.ErrTxnConflict) {
+		if err != nil && err.Error() == "Transaction Conflict. Please retry" {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}

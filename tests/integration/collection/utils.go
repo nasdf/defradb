@@ -42,7 +42,7 @@ func ExecuteRequestTestCase(
 ) {
 	ctx := context.Background()
 
-	db, err := testUtils.NewBadgerMemoryDB(ctx)
+	db, err := testUtils.NewInMemoryDB(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

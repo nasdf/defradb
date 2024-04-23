@@ -81,7 +81,7 @@ func setupDefraNode(
 	ctx := context.Background()
 
 	log.InfoContext(ctx, "Building new memory store")
-	db, err := testutils.NewBadgerMemoryDB(ctx, coreDB.WithUpdateEvents())
+	db, err := testutils.NewInMemoryDB(ctx, coreDB.WithUpdateEvents())
 	if err != nil {
 		return nil, nil, err
 	}

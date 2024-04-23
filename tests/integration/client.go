@@ -11,14 +11,8 @@
 package tests
 
 import (
-	"fmt"
 	"os"
 	"strconv"
-
-	"github.com/sourcenetwork/defradb/net"
-	"github.com/sourcenetwork/defradb/tests/clients"
-	"github.com/sourcenetwork/defradb/tests/clients/cli"
-	"github.com/sourcenetwork/defradb/tests/clients/http"
 )
 
 const (
@@ -58,28 +52,4 @@ func init() {
 		// Default is to test go client type.
 		goClient = true
 	}
-}
-
-// setupClient returns the client implementation for the current
-// testing state. The client type on the test state is used to
-// select the client implementation to use.
-func setupClient(s *state, node *net.Node) (impl clients.Client, err error) {
-	switch s.clientType {
-	case HTTPClientType:
-		impl, err = http.NewWrapper(node)
-
-	case CLIClientType:
-		impl, err = cli.NewWrapper(node)
-
-	case GoClientType:
-		impl = node
-
-	default:
-		err = fmt.Errorf("invalid client type: %v", s.dbt)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	return
 }
