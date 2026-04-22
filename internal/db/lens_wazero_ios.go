@@ -1,4 +1,4 @@
-// Copyright 2024 Democratized Data Foundation
+// Copyright 2026 Democratized Data Foundation
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.txt.
@@ -8,7 +8,12 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-//go:build !js && !android && !ios
+// On iOS, wasmtime cannot be linked because its C library doesn't ship for
+// the iOS SDK. This file mirrors lens_wazero_android.go by registering
+// wazero (pure Go) as both the default lens runtime and the named "wazero"
+// runtime.
+
+//go:build ios
 
 package db
 
@@ -20,5 +25,6 @@ import (
 const Wazero LensRuntimeType = "wazero"
 
 func init() {
+	runtimeConstructors[DefaultLens] = func() module.Runtime { return wazero.New() }
 	runtimeConstructors[Wazero] = func() module.Runtime { return wazero.New() }
 }

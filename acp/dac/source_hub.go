@@ -8,10 +8,13 @@
 // by the Apache License, Version 2.0, included in the file
 // licenses/APL.txt.
 
-// SourceHub ACP implementation for non-JS environments.
-// JS environments are handled by source_hub_js.go
+// SourceHub ACP implementation for non-JS, non-iOS environments.
+// JS environments are handled by source_hub_js.go. iOS does not currently
+// ship a SourceHub ACP implementation — its transitive cosmos-sdk dependency
+// chain pulls in 99designs/keyring's macOS-only keychain backend, which
+// does not build against the iOS SDK.
 //
-//go:build !js
+//go:build !js && !ios
 
 package dac
 
